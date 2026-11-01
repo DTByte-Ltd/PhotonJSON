@@ -464,6 +464,11 @@ function JSONStringify pArray, pForceRootType, pPretty
       // non-printable characters to your unicode code (HEX)
       put _cleaningNonPrintableChars(tJsonString) into tJsonString
 
+      # The JSON text is built as text; encode it as UTF-8 once, here, so that
+      # every character outside ASCII is written as its UTF-8 bytes rather than
+      # being escaped by the native code of one of those bytes.
+      put textEncode(tJsonString, "UTF-8") into tJsonString
+
       # Pretty
       if pPretty then return _jsonPrettyCompact(tJsonString, 2, pForceRootType)
    end if
@@ -665,8 +670,6 @@ private command _builderJSON pArray, pIsNumeric, pOptions, @xJsonString
 end _builderJSON
 
 private function _jsonString pValue
-   if pValue is not an ascii string then put textEncode(pValue, "UTF-8") into pValue
-
    # So these characters escape in case they are there.
    # https://www.json.org/img/string.png
    # any other value is processed as a string.
@@ -906,14 +909,20 @@ private function _filterHandlerList pList
 end _filterHandlerList
 
 
-// non-printable characters to your unicode code (HEX)
-constant kNonPrintableChars = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,8216,8217,8220,8221,8212,8213,8230"
+// Non-printable characters as Unicode code points: the C0 controls, which
+// JSON requires to be escaped (ECMA-404 section 9), DEL and the C1 controls.
+// They are matched by code point (numToCodepoint), not by numToChar, which
+// returns the character the platform's native encoding has at that number:
+// on macOS numToChar(137) is "â", so 128 to 159 used to escape accented
+// letters. Typographic quotes, dashes and the ellipsis are printable and
+// are written as themselves.
+constant kNonPrintableChars = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159"
 private function _cleaningNonPrintableChars pText
    set the formSensitive to false
 
    repeat for each item i in kNonPrintableChars
-      if numToChar(i) is in pText then
-         replace numToChar(i) with _convertAsciiToUnicodeNum(i) in pText
+      if numToCodepoint(i) is in pText then
+         replace numToCodepoint(i) with _convertAsciiToUnicodeNum(i) in pText
       end if
    end repeat
 
@@ -928,7 +937,7 @@ private function _resetNonPrintableChars pText
    repeat for each item i in kNonPrintableChars
       put _convertAsciiToUnicodeNum(i) into tUnicode
       if tUnicode is in pText then
-         replace tUnicode with numToChar(i) in pText
+         replace tUnicode with numToCodepoint(i) in pText
       end if
    end repeat
 
