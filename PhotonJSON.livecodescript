@@ -501,6 +501,10 @@ function JSONParser pJsonString
    replace (backSlash & quote) with "\u0022" in pJsonString
    replace numToChar(0) with "\u0000" in pJsonString
 
+   # the token chunk drops the quotes, so hide a quoted "null" from the bare
+   # null check below; the escape is undone with the others
+   replace quote & "null" & quote with quote & "\u006Eull" & quote in pJsonString
+
    if the number of tokens of pJsonString is 2 then
       if token 1 of pJsonString is "[" and the token 2 of pJsonString is "]" then
          put empty into tResultArray[1]
@@ -583,6 +587,11 @@ function JSONParser pJsonString
             put true into tHyphenMinus
             put tToken into tOldToken
             next repeat
+
+         case "null"
+            # a bare null becomes an empty value
+            if tKeyNameOrValue = 1 then put empty into tToken
+            break
       end switch
 
       if backslash is in tToken then
@@ -679,7 +688,11 @@ private function _jsonValue pValue, pNoReplace
          return "false"
          break
 
-      case ""; case "null"; case null
+      case ""
+         return quote & quote
+         break
+
+      case "null"; case null
          return "null"
          break
 
