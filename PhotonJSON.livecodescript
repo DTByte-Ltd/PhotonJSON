@@ -390,10 +390,12 @@ function minifyJSON pJsonString
                put false into tHyphenMinus
             end if
 
-            replace "\u005C" with "\" in tToken
-            replace "\u0022" with quote in tToken
+            # The token is still JSON-escaped text, so restore the placeholders
+            # to their escape sequences and re-quote it without escaping again.
+            replace "\u005C" with "\\" in tToken
+            replace "\u0022" with "\" & quote in tToken
 
-            put _jsonString(tToken) after tFormatted
+            put quote & tToken & quote after tFormatted
       end switch
 
       put tToken into tPrevToken
@@ -670,7 +672,7 @@ private function _jsonString pValue
    # any other value is processed as a string.
    # JSON strings require that certain characters be 'escaped' with a backslash:
    # This makes the processing a bit slower. But it is necessary for it to comply with the ECMA-404 standard
-   if "\" is in pValue then replace " " with " " in pValue
+   if "\" is in pValue then replace "\" with "\\" in pValue
    if quote is in pValue then replace quote with "\" & quote in pValue
    return quote & pValue & quote
 end _jsonString
