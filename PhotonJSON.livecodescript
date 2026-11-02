@@ -488,6 +488,7 @@ array. It parses <pJsonString> and returns resulting array.
 */
 function JSONParser pJsonString
    local tKeyNameOrValue = 0, tArrayKeysPath, tNumKeys = 0, tOpenJArray, tResultArray, tHyphenMinus, tToken, tOldToken, tObjEmpty
+   local tLastValue, tExponentSign
 
    if pJsonString is empty then return empty
    put _jsonTextFromInput(pJsonString) into pJsonString
@@ -583,8 +584,14 @@ function JSONParser pJsonString
             put tToken into tOldToken
             next repeat
 
-         case "-"
-            put true into tHyphenMinus
+         case "-"; case "+"
+            # The token chunk splits "1e-5" into "1e", "-" and "5": a sign right
+            # after a value that ends in "e" belongs to that number's exponent.
+            if tOldToken is empty and matchText(tLastValue, "^-?[0-9.]+[eE]$") then
+               put tToken into tExponentSign
+               next repeat
+            end if
+            if tToken is "-" then put true into tHyphenMinus
             put tToken into tOldToken
             next repeat
 
@@ -606,11 +613,16 @@ function JSONParser pJsonString
       put empty into tOldToken
 
       if tKeyNameOrValue = 1 then
-         if tHyphenMinus then
+         if tExponentSign is not empty then
+            # completes the number stored on the previous pass
+            put tLastValue & tExponentSign & tToken into tToken
+            put empty into tExponentSign
+         else if tHyphenMinus then
             put "-" & tToken into tToken
             put false into tHyphenMinus
          end if
 
+         put tToken into tLastValue
          _builderArray tToken, tArrayKeysPath, tResultArray, tNumKeys
       else if tKeyNameOrValue = 0 then
          add 1 to tNumKeys
@@ -697,10 +709,12 @@ private function _jsonValue pValue, pNoReplace
          break
 
       default
-         if pValue is a number then
-            if not(char 1 of pValue is 0 and char 2 of pValue is not "." and the length of pValue is not 1 or char 1 of pValue is not in "-0123456789") then
-               return pValue
-            end if
+         # Write a value bare only when it already is a number in its canonical
+         # form: an optional minus, no leading zeros, no trailing zeros in the
+         # fraction, no exponent. "007", "3.10" and "1e5" are text that happens
+         # to evaluate as a number, and are written as strings.
+         if matchText(pValue, "^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$") then
+            return pValue
          end if
 
          if pNoReplace is no true then
