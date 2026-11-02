@@ -533,6 +533,7 @@ function JSONParser pJsonString
          case "}"
             # Fix bug when JSON has empty objects
             if tOldToken is "{" then
+               put empty into tObjEmpty
                put empty into tObjEmpty[empty]
                _builderArray tObjEmpty, tArrayKeysPath, tResultArray, tNumKeys
                put tToken into tOldToken
@@ -572,6 +573,7 @@ function JSONParser pJsonString
 
             # Fix bug when JSON has empty array
             if tOldToken is "[" then
+               put empty into tObjEmpty
                put empty into tObjEmpty[1]
                _builderArray tObjEmpty, tArrayKeysPath, tResultArray, tNumKeys
                put tToken into tOldToken
@@ -763,7 +765,9 @@ private command _builderArray @pValue, @pListKeys, @pArray, @pNumKeys
          put pValue into pArray[pListKeys[1]][pListKeys[2]][pListKeys[3]][pListKeys[4]][pListKeys[5]][pListKeys[6]][pListKeys[7]][pListKeys[8]][pListKeys[9]][pListKeys[10]]
          break
       default
-         repeat with x = 1 to pNumKeys
+         # wrap the value from the innermost key outwards, so that the path
+         # is pListKeys[1] / pListKeys[2] / ... / pListKeys[pNumKeys]
+         repeat with x = pNumKeys down to 1
             put empty into tArray
             put pValue into tArray[pListKeys[x]]
             put tArray into pValue
