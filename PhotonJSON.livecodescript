@@ -918,12 +918,18 @@ end _filterHandlerList
 // are written as themselves.
 constant kNonPrintableChars = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159"
 private function _cleaningNonPrintableChars pText
-   set the formSensitive to false
+   # Each distinct non-printable code point present is found with one regex
+   # search and escaped with one regex replace. On text outside ASCII a plain
+   # "is in" or "replace" costs about 100 ms per scan on a megabyte of text
+   # on this engine; matchChunk and replaceText take a few milliseconds.
+   local tStart, tEnd, tCode
 
-   repeat for each item i in kNonPrintableChars
-      if numToCodepoint(i) is in pText then
-         replace numToCodepoint(i) with _convertAsciiToUnicodeNum(i) in pText
+   repeat forever
+      if not matchChunk(pText, "([\x{0}-\x{1F}\x{7F}-\x{9F}])", tStart, tEnd) then
+         exit repeat
       end if
+      put codepointToNum(codepoint 1 of char tStart of pText) into tCode
+      put replaceText(pText, "\x{" & baseConvert(tCode, 10, 16) & "}", _convertAsciiToUnicodeNum(tCode)) into pText
    end repeat
 
    return pText
@@ -933,6 +939,10 @@ end _cleaningNonPrintableChars
 private function _resetNonPrintableChars pText
    local tUnicode
    set the formSensitive to false
+
+   if not matchText(pText, "\\u00[0-9A-Fa-f]{2}") then
+      return pText
+   end if
 
    repeat for each item i in kNonPrintableChars
       put _convertAsciiToUnicodeNum(i) into tUnicode
