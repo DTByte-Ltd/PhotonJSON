@@ -390,10 +390,12 @@ function minifyJSON pJsonString
                put false into tHyphenMinus
             end if
 
-            replace "\u005C" with "\" in tToken
-            replace "\u0022" with quote in tToken
+            # The token is still JSON-escaped text, so restore the placeholders
+            # to their escape sequences and re-quote it without escaping again.
+            replace "\u005C" with "\\" in tToken
+            replace "\u0022" with "\" & quote in tToken
 
-            put _jsonString(tToken) after tFormatted
+            put quote & tToken & quote after tFormatted
       end switch
 
       put tToken into tPrevToken
@@ -464,6 +466,10 @@ function JSONStringify pArray, pForceRootType, pPretty
 
       # Pretty
       if pPretty then return _jsonPrettyCompact(tJsonString, 2, pForceRootType)
+
+      # tJsonString holds the UTF-8 bytes of the document one native character
+      # per byte (see _jsonString); hand them back as binary data
+      return textEncode(tJsonString, "native")
    end if
 
    return tJsonString
@@ -670,7 +676,7 @@ private function _jsonString pValue
    # any other value is processed as a string.
    # JSON strings require that certain characters be 'escaped' with a backslash:
    # This makes the processing a bit slower. But it is necessary for it to comply with the ECMA-404 standard
-   if "\" is in pValue then replace " " with " " in pValue
+   if "\" is in pValue then replace "\" with "\\" in pValue
    if quote is in pValue then replace quote with "\" & quote in pValue
    return quote & pValue & quote
 end _jsonString
@@ -904,10 +910,20 @@ private function _filterHandlerList pList
 end _filterHandlerList
 
 
-// non-printable characters to your unicode code (HEX)
-constant kNonPrintableChars = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,8216,8217,8220,8221,8212,8213,8230"
+// The C0 control characters, which JSON requires to be escaped (ECMA-404
+// section 9), and DEL. In the UTF-8 bytes that JSONStringify builds these
+// are single bytes that never occur inside a multibyte sequence, so they
+// can be matched as single native characters. The C1 controls U+0080 to
+// U+009F are handled separately below: in UTF-8 each is the two-byte
+// sequence C2 80 to C2 9F. Matching a bare byte 128 to 159, as the old
+// list did, hits the continuation byte of any accented letter ("É" is
+// C3 89), which is what wrote "É" as "\u0089". Typographic quotes,
+// dashes and the ellipsis are printable and are no longer escaped.
+constant kNonPrintableChars = "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,127"
 private function _cleaningNonPrintableChars pText
-   set the formSensitive to false
+   local tOldCase, i, tPair
+   put the caseSensitive into tOldCase
+   set the caseSensitive to true
 
    repeat for each item i in kNonPrintableChars
       if numToChar(i) is in pText then
@@ -915,13 +931,27 @@ private function _cleaningNonPrintableChars pText
       end if
    end repeat
 
+   repeat with i = 128 to 159
+      put numToChar(194) & numToChar(i) into tPair
+      if tPair is in pText then
+         replace tPair with _convertAsciiToUnicodeNum(i) in pText
+      end if
+   end repeat
+
+   set the caseSensitive to tOldCase
    return pText
 end _cleaningNonPrintableChars
 
 
 private function _resetNonPrintableChars pText
-   local tUnicode
-   set the formSensitive to false
+   local tOldCase, tUnicode, i
+
+   if "\u00" is not in pText then
+      return pText
+   end if
+
+   put the caseSensitive into tOldCase
+   set the caseSensitive to true
 
    repeat for each item i in kNonPrintableChars
       put _convertAsciiToUnicodeNum(i) into tUnicode
@@ -930,6 +960,14 @@ private function _resetNonPrintableChars pText
       end if
    end repeat
 
+   repeat with i = 128 to 159
+      put _convertAsciiToUnicodeNum(i) into tUnicode
+      if tUnicode is in pText then
+         replace tUnicode with (numToChar(194) & numToChar(i)) in pText
+      end if
+   end repeat
+
+   set the caseSensitive to tOldCase
    return pText
 end _resetNonPrintableChars
 
