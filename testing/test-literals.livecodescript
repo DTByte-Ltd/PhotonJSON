@@ -76,6 +76,11 @@ on testLiterals
    put JSONParser("{" & quote & "q" & quote & ": " & quote & "true" & quote & "}") into tB
    check "quoted true parses to the string true", tB["q"] is "true", tB["q"]
 
+   -- empty list and empty object survive a round trip
+   put JSONParser("{" & quote & "l" & quote & ": [], " & quote & "o" & quote & ": {}, " & quote & "v" & quote & ": 1}") into tB
+   put JSONStringify(tB) into tJ
+   check "empty list is written back as []", quote & "l" & quote & ": []" is in tJ, tJ
+
    put "PASS " & sPass & "  FAIL " & sFail & return
 end testLiterals
 

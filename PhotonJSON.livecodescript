@@ -437,10 +437,11 @@ function JSONStringify pArray, pForceRootType, pPretty
    
    put tEndChar into the char - 1 of tJsonString
 
-   # Empty array and empty objects
-   if tJsonString is "[null]" then
+   # Empty list and empty object: JSONParser returns them as an array with
+   # one empty element, under the key 1 or "", so write those back as [] and {}
+   if tJsonString is "[" & quote & quote & "]" then
       put "[]" into tJsonString
-   else if tJsonString is "{" & quote & quote & ": null}" then
+   else if tJsonString is "{" & quote & quote & ": " & quote & quote & "}" then
       put "{}" into tJsonString
    end if
 
@@ -498,7 +499,7 @@ function JSONParser pJsonString
 
    # the token chunk drops the quotes, so hide a quoted "null" from the bare
    # null check below; the escape is undone with the others
-   replace quote & "null" & quote with quote & "\u006Eull" & quote in pJsonString
+   put replaceText(pJsonString, quote & "null" & quote, quote & "\u006Eull" & quote) into pJsonString
 
    if the number of tokens of pJsonString is 2 then
       if token 1 of pJsonString is "[" and the token 2 of pJsonString is "]" then
