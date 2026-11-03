@@ -648,7 +648,13 @@ private command _builderJSON pArray, pIsNumeric, pOptions, @xJsonString
          end if
       end repeat
    else
-      repeat for each key k in pArray
+      # Keys are written in sorted order so that the same data always gives
+      # the same text, which is what makes the output usable with diff and
+      # version control. LiveCode's own key order varies between runs.
+      local tKeys
+      put the keys of pArray into tKeys
+      sort lines of tKeys international
+      repeat for each line k in tKeys
          if pArray[k] is an array then
             put _jsonString(k) & ": " &JSONStringify(pArray[k], tString, tPretty) & comma after xJsonString
          else
