@@ -263,17 +263,9 @@ function validateJSON pJsonString
    so we replace them with "\u0022" and "\u005C" which we'll unescape
    with all the other unescapes when we parse */
 
-   if "\\" is in pJsonString then
-      replace " " with " " in pJsonString
-   end if
-
-   if (backSlash & quote) is in pJsonString then
-      replace (backSlash & quote) with "\u0022" in pJsonString
-   end if
-
-   if "\/" is in pJsonString then
-      replace "\/" with "/" in pJsonString
-   end if
+   put replaceText(pJsonString, "\\\\", "\u005C") into pJsonString
+   put replaceText(pJsonString, "\\" & quote, "\u0022") into pJsonString
+   put replaceText(pJsonString, "\\/", "/") into pJsonString
 
    put _cleaningNonPrintableChars(pJsonString) into pJsonString
 
@@ -366,9 +358,9 @@ function minifyJSON pJsonString
    # escaped quotes < " > and reverse-solidus < \\ > will confuse the tokenizer
    # so we replace them with "\u0022" and "\u005C" which we'll unescape
    # with all the other unescapes when we parse
-   if "\\" is in pJsonString then replace " " with " " in pJsonString
-   if (backSlash & quote) is in pJsonString then replace (backSlash & quote) with "\u0022" in pJsonString
-   if "\/" is in pJsonString then replace "\/" with "/" in pJsonString
+   put replaceText(pJsonString, "\\\\", "\u005C") into pJsonString
+   put replaceText(pJsonString, "\\" & quote, "\u0022") into pJsonString
+   put replaceText(pJsonString, "\\/", "/") into pJsonString
    put _cleaningNonPrintableChars(pJsonString) into pJsonString
 
    repeat for each token tToken in pJsonString
@@ -390,10 +382,12 @@ function minifyJSON pJsonString
                put false into tHyphenMinus
             end if
 
-            replace "\u005C" with "\" in tToken
-            replace "\u0022" with quote in tToken
+            # The token is still JSON-escaped text, so restore the placeholders
+            # to their escape sequences and re-quote it without escaping again.
+            replace "\u005C" with "\\" in tToken
+            replace "\u0022" with "\" & quote in tToken
 
-            put _jsonString(tToken) after tFormatted
+            put quote & tToken & quote after tFormatted
       end switch
 
       put tToken into tPrevToken
@@ -443,10 +437,11 @@ function JSONStringify pArray, pForceRootType, pPretty
    
    put tEndChar into the char - 1 of tJsonString
 
-   # Empty array and empty objects
-   if tJsonString is "[null]" then
+   # Empty list and empty object: JSONParser returns them as an array with
+   # one empty element, under the key 1 or "", so write those back as [] and {}
+   if tJsonString is "[" & quote & quote & "]" then
       put "[]" into tJsonString
-   else if tJsonString is "{" & quote & quote & ": null}" then
+   else if tJsonString is "{" & quote & quote & ": " & quote & quote & "}" then
       put "{}" into tJsonString
    end if
 
@@ -486,17 +481,26 @@ array. It parses <pJsonString> and returns resulting array.
 */
 function JSONParser pJsonString
    local tKeyNameOrValue = 0, tArrayKeysPath, tNumKeys = 0, tOpenJArray, tResultArray, tHyphenMinus, tToken, tOldToken, tObjEmpty
+   local tLastValue, tExponentSign
 
    if pJsonString is empty then return empty
-   replace tab with empty in pJsonString
-   replace cr with empty in pJsonString
+   put _jsonTextFromInput(pJsonString) into pJsonString
+
+   # replaceText rather than replace throughout the pre-pass: on text outside
+   # ASCII, replace costs about 100 ms per call on a megabyte of text on this
+   # engine, replaceText a few milliseconds.
+   put replaceText(pJsonString, "[\t\n]", "") into pJsonString
 
    # escaped quotes < " > and reverse-solidus < \\ > will confuse the tokenizer
    # so we replace them with "\u0022" and "\u005C" which we'll unescape
    # with all the other unescapes when we parse
-   replace "\\" with " " in pJsonString
-   replace (backSlash & quote) with "\u0022" in pJsonString
-   replace numToChar(0) with "\u0000" in pJsonString
+   put replaceText(pJsonString, "\\\\", "\u005C") into pJsonString
+   put replaceText(pJsonString, "\\" & quote, "\u0022") into pJsonString
+   put replaceText(pJsonString, "\x{0}", "\u0000") into pJsonString
+
+   # the token chunk drops the quotes, so hide a quoted "null" from the bare
+   # null check below; the escape is undone with the others
+   put replaceText(pJsonString, quote & "null" & quote, quote & "\u006Eull" & quote) into pJsonString
 
    if the number of tokens of pJsonString is 2 then
       if token 1 of pJsonString is "[" and the token 2 of pJsonString is "]" then
@@ -529,6 +533,7 @@ function JSONParser pJsonString
          case "}"
             # Fix bug when JSON has empty objects
             if tOldToken is "{" then
+               put empty into tObjEmpty
                put empty into tObjEmpty[empty]
                _builderArray tObjEmpty, tArrayKeysPath, tResultArray, tNumKeys
                put tToken into tOldToken
@@ -568,6 +573,7 @@ function JSONParser pJsonString
 
             # Fix bug when JSON has empty array
             if tOldToken is "[" then
+               put empty into tObjEmpty
                put empty into tObjEmpty[1]
                _builderArray tObjEmpty, tArrayKeysPath, tResultArray, tNumKeys
                put tToken into tOldToken
@@ -576,23 +582,25 @@ function JSONParser pJsonString
             put tToken into tOldToken
             next repeat
 
-         case "-"
-            put true into tHyphenMinus
+         case "-"; case "+"
+            # The token chunk splits "1e-5" into "1e", "-" and "5": a sign right
+            # after a value that ends in "e" belongs to that number's exponent.
+            if tOldToken is empty and matchText(tLastValue, "^-?[0-9.]+[eE]\z") then
+               put tToken into tExponentSign
+               next repeat
+            end if
+            if tToken is "-" then put true into tHyphenMinus
             put tToken into tOldToken
             next repeat
+
+         case "null"
+            # a bare null becomes an empty value
+            if tKeyNameOrValue = 1 then put empty into tToken
+            break
       end switch
 
       if backslash is in tToken then
-         if "\n" is in tToken then replace "\n" with numToChar(10) in tToken
-         if "\r" is in tToken then replace "\r" with numToChar(13) in tToken
-         if "\t" is in tToken then replace "\t" with numToChar(9) in tToken
-         if "\/" is in tToken then replace "\/" with "/" in tToken
-         if "\f" is in tToken then replace "\f" with numToChar(12) in tToken
-         if "\b" is in tToken then replace "\b" with numToChar(8) in tToken
-         if "\u0022" is in tToken then replace "\u0022" with quote in tToken
-         if "\u005C" is in tToken then replace "\u005C" with "\" in tToken
-         if "\u" is in tToken then put _resetNonPrintableChars(tToken) into tToken
-         if "\u" is in tToken then put _unicodeEscapes(tToken) into tToken
+         put _unescapeJSONString(tToken) into tToken
       end if
 
       if tOldToken is not in "{[,:-" then
@@ -600,15 +608,19 @@ function JSONParser pJsonString
          return empty
       end if
 
-      put textDecode(tToken, "UTF-8") into tToken
       put empty into tOldToken
 
       if tKeyNameOrValue = 1 then
-         if tHyphenMinus then
+         if tExponentSign is not empty then
+            # completes the number stored on the previous pass
+            put tLastValue & tExponentSign & tToken into tToken
+            put empty into tExponentSign
+         else if tHyphenMinus then
             put "-" & tToken into tToken
             put false into tHyphenMinus
          end if
 
+         put tToken into tLastValue
          _builderArray tToken, tArrayKeysPath, tResultArray, tNumKeys
       else if tKeyNameOrValue = 0 then
          add 1 to tNumKeys
@@ -686,15 +698,23 @@ private function _jsonValue pValue, pNoReplace
          return "false"
          break
 
-      case ""; case "null"; case null
+      case ""
+         return quote & quote
+         break
+
+      case "null"; case null
          return "null"
          break
 
       default
-         if pValue is a number then
-            if not(char 1 of pValue is 0 and char 2 of pValue is not "." and the length of pValue is not 1 or char 1 of pValue is not in "-0123456789") then
-               return pValue
-            end if
+         # Write a value bare only when it already is a number in its canonical
+         # form: an optional minus, no leading zeros, no trailing zeros in the
+         # fraction, no exponent. "007", "3.10" and "1e5" are text that happens
+         # to evaluate as a number, and are written as strings. \z rather than
+         # $, which in a regex also matches before a final newline: "6" & LF
+         # is a string.
+         if matchText(pValue, "^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?\z") then
+            return pValue
          end if
 
          if pNoReplace is no true then
@@ -747,7 +767,9 @@ private command _builderArray @pValue, @pListKeys, @pArray, @pNumKeys
          put pValue into pArray[pListKeys[1]][pListKeys[2]][pListKeys[3]][pListKeys[4]][pListKeys[5]][pListKeys[6]][pListKeys[7]][pListKeys[8]][pListKeys[9]][pListKeys[10]]
          break
       default
-         repeat with x = 1 to pNumKeys
+         # wrap the value from the innermost key outwards, so that the path
+         # is pListKeys[1] / pListKeys[2] / ... / pListKeys[pNumKeys]
+         repeat with x = pNumKeys down to 1
             put empty into tArray
             put pValue into tArray[pListKeys[x]]
             put tArray into pValue
@@ -761,37 +783,110 @@ private command _builderArray @pValue, @pListKeys, @pArray, @pNumKeys
 end _builderArray
 
 
-private function _unicodeEscapes pString
-   local tInEsc, tCount, tBuffer, tInEscape, tNString
+private function _jsonTextFromInput pJsonString
+   # JSONParser has always taken "UTF-8 encoded JSON text". Accept it as
+   # binary data (url "binfile:", tsNet, sockets), as text that holds those
+   # bytes one character per byte (url "file:" and older code paths), or as
+   # plain text, and return plain text.
+   if pJsonString is strictly a binary string then
+      return textDecode(pJsonString, "UTF-8")
+   end if
+   if pJsonString is an ascii string then
+      return pJsonString
+   end if
 
-   put false into tInEsc
-   repeat for each char c in pString
-      add 1 to tCount
-      put c after tBuffer
-      if tCount < 2 then next repeat
-      if tBuffer is "\u" then put true into tInEsc
-      if tInEsc then
-         if length(tBuffer) < 6 then
-            next repeat
-         else
-            -- TO DEAL WITH DIACRITICS :
-            if platform() is "MacOS" then
-               put isotomac(numToChar(baseconvert(char 3 to 6 of tBuffer, 16, 10))) into tBuffer
-            else
-               put numToChar(baseconvert(char 3 to 6 of tBuffer, 16, 10)) into tBuffer
-            end if
-            put false into tInEsc
-         end if
-      else
-         put char 1 of tBuffer after tNString
-         delete char 1 of tBuffer
+   # Text whose characters are really UTF-8 bytes survives being reassembled
+   # into bytes and decoded as UTF-8; genuine text does not (it either has
+   # characters outside the native set or its bytes are not valid UTF-8, and
+   # textDecode drops invalid bytes, so re-encoding no longer matches).
+   local tBytes, tText, tCheck
+   put textEncode(pJsonString, "native") into tBytes
+   if textDecode(tBytes, "native") is not pJsonString then
+      return pJsonString
+   end if
+   put textDecode(tBytes, "UTF-8") into tText
+   put textEncode(tText, "UTF-8") into tCheck
+   if the number of bytes in tCheck is not the number of bytes in tBytes or tCheck is not tBytes then
+      return pJsonString
+   end if
+   return tText
+end _jsonTextFromInput
+
+
+private function _unescapeJSONString pString
+   # Decode the JSON escape sequences of one token in a single left to right
+   # pass, so that the text produced by one escape is never read as the start
+   # of another (ECMA-404 section 9). By the time a token gets here the
+   # tokenizer pre-pass has turned \\ into \u005C and \" into \u0022.
+   local tOut, tStart = 1, tOff, tNext, tHex, tCode, tLow, tLength
+
+   put the number of chars in pString into tLength
+   repeat forever
+      put offset("\", pString, tStart - 1) into tOff
+      if tOff is 0 then
+         put char tStart to -1 of pString after tOut
+         exit repeat
       end if
+      add tStart - 1 to tOff
+      put char tStart to (tOff - 1) of pString after tOut
+      put char (tOff + 1) of pString into tNext
+      put tOff + 2 into tStart
+
+      switch tNext
+         case "n"
+            put numToChar(10) after tOut
+            break
+         case "r"
+            put numToChar(13) after tOut
+            break
+         case "t"
+            put numToChar(9) after tOut
+            break
+         case "b"
+            put numToChar(8) after tOut
+            break
+         case "f"
+            put numToChar(12) after tOut
+            break
+         case "/"
+            put "/" after tOut
+            break
+         case quote
+            put quote after tOut
+            break
+         case "\"
+            put "\" after tOut
+            break
+         case "u"
+            put char (tOff + 2) to (tOff + 5) of pString into tHex
+            if not matchText(tHex, "^[0-9A-Fa-f]{4}$") then
+               # malformed escape: keep it as written
+               put "\u" after tOut
+               break
+            end if
+            put baseConvert(tHex, 16, 10) into tCode
+            put tOff + 6 into tStart
+            # a high surrogate followed by a low surrogate is one code point
+            if tCode >= 55296 and tCode <= 56319 and char tStart to (tStart + 1) of pString is "\u" then
+               put char (tStart + 2) to (tStart + 5) of pString into tHex
+               if matchText(tHex, "^[0-9A-Fa-f]{4}$") then
+                  put baseConvert(tHex, 16, 10) into tLow
+                  if tLow >= 56320 and tLow <= 57343 then
+                     put 65536 + (tCode - 55296) * 1024 + (tLow - 56320) into tCode
+                     add 6 to tStart
+                  end if
+               end if
+            end if
+            put numToCodepoint(tCode) after tOut
+            break
+         default
+            # not a JSON escape: keep the backslash and the character
+            put "\" & tNext after tOut
+      end switch
    end repeat
 
-   put tBuffer after tNString
-
-   return tNString
-end _unicodeEscapes
+   return tOut
+end _unescapeJSONString
 
 
 # json beautiful and compact
@@ -808,8 +903,8 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
    # escaped quotes < " > and reverse-solidus < \\ > will confuse the tokenizer
    # so we replace them with "\u0022" and "\u005C" which we'll unescape
    # with all the other unescapes when we parse
-   if "\\" is in pJsonString then replace " " with " " in pJsonString
-   if backSlash & quote is in pJsonString then replace backSlash & quote with "\u0022" in pJsonString
+   put replaceText(pJsonString, "\\\\", "\u005C") into pJsonString
+   put replaceText(pJsonString, "\\" & quote, "\u0022") into pJsonString
 
    // In this loop we only get where each JSON object and JSON array begins and ends.
    // For now to measure the size of these to know from where to where is each.
