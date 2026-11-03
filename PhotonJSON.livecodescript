@@ -426,8 +426,11 @@ function JSONStringify pArray, pForceRootType, pPretty
 
    if pArray is not an array then return "{}"
 
-   # The array's keys are all *numerical*, so the root element will be a JSON *array*
-   if the extents of pArray is not a point then
+   # Only an array whose keys are exactly 1 to n is written as a JSON list.
+   # Any other set of integer keys (sparse, or not starting at 1) is written
+   # as an object, otherwise the keys would be lost: {2: "x", 5: "y"} used to
+   # come out as ["x","y"].
+   if the extents of pArray is not ("1," & the number of elements in pArray) then
       put false into tIsNumeric
       put "{" into tJsonString
       put "}" into tEndChar
