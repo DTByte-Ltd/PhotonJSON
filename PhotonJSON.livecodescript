@@ -796,7 +796,11 @@ end _unicodeEscapes
 
 # json beautiful and compact
 private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
-   local tFormatted, tIndent, kSpace, tPrevToken = "", tIndex = 0, tOpenClose = "", tItems = "", tHyphenMinus = false
+   local tFormatted, tIndent, kSpace, tPrevToken = "", tIndex = 0, tItems = "", tHyphenMinus = false
+   # tIsObject records, per open container, whether it is an object; tExpectKey
+   # is true while the next token is a key, which must always be written as a
+   # string however it looks ("123", "true", "null" or "" are all valid keys).
+   local tIsObject = "", tExpectKey = false
 
    if sMaxLength is not an integer then put 50 into sMaxLength
    if pIndentSize is not a integer or pIndentSize > 10 then put 4 into pIndentSize
@@ -811,14 +815,20 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
    if "\\" is in pJsonString then replace " " with " " in pJsonString
    if backSlash & quote is in pJsonString then replace backSlash & quote with "\u0022" in pJsonString
 
-   // In this loop we only get where each JSON object and JSON array begins and ends.
-   // For now to measure the size of these to know from where to where is each.
+   // First pass: the text length of each object and list, by token index of
+   // its opening bracket, from a running total of token lengths. (Measuring
+   // with "the token a to b of pJsonString" re-tokenised the whole document
+   // once per container, which took minutes on a few megabytes.) An empty
+   // string token is not a bracket, so brackets are compared exactly.
+   local tPos = 0, tStartPos, tLength
    repeat for each token tToken in pJsonString
       add 1 to tIndex
-      if tToken is in "[{" then
+      add the number of chars in tToken + 1 to tPos
+      if tToken is "[" or tToken is "{" then
          put comma & tIndex after tItems
-      else if tToken is in "]}" then
-         put tIndex into tOpenClose[the item - 1 of tItems]
+         put tPos into tStartPos[tIndex]
+      else if tToken is "]" or tToken is "}" then
+         put tPos - tStartPos[the item - 1 of tItems] into tLength[the item - 1 of tItems]
          delete the item - 1 of tItems
       end if
    end repeat
@@ -832,7 +842,9 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
       switch tToken
          case "{"; case "["
             put kSpace after tIndent
-            if the length of (the token tIndex to tOpenClose[tIndex] of pJsonString) > sMaxLength then
+            put comma & (tToken is "{") after tIsObject
+            put (tToken is "{") into tExpectKey
+            if tLength[tIndex] > sMaxLength then
                put tToken & cr & tIndent after tFormatted
                put comma & true after tItems
             else
@@ -849,10 +861,13 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
                put tToken after tFormatted
             end if
             delete last item of tItems
+            delete last item of tIsObject
+            put false into tExpectKey
             break
 
          case ":"
             put ": " after tFormatted
+            put false into tExpectKey
             break
 
          case comma
@@ -861,6 +876,7 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
             else
                put comma & space after tFormatted
             end if
+            put (the last item of tIsObject is true) into tExpectKey
             break
 
          case "-"
@@ -879,7 +895,7 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
                replace "\u0022" with "\" & quote in tToken
             end if
 
-            if pForceRootType is "string" then
+            if tExpectKey or pForceRootType is "string" then
                put quote & tToken & quote after tFormatted
             else
                put _jsonValue(tToken, true) after tFormatted
