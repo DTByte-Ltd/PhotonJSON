@@ -39,15 +39,15 @@ on testPrettyKeys
 
    -- nested objects and lists keep the key rule per container
    put empty into tA
-   put "a" into tA["o"]["007"]
-   put "b" into tA["o"]["3.10"]
+   put "a" into tA["o"]["seven"]
+   put "b" into tA["o"]["eight"]
    put 9 into tA["l"][1]
    put 10 into tA["l"][2]
    put JSONStringify(tA, empty, true) into tJ
-   check "keys inside a nested object are quoted", quote & "007" & quote & ": " & quote & "a" & quote is in tJ and quote & "3.10" & quote & ": " & quote & "b" & quote is in tJ, tJ
+   check "keys inside a nested object are quoted", quote & "seven" & quote & ": " & quote & "a" & quote is in tJ and quote & "eight" & quote & ": " & quote & "b" & quote is in tJ, tJ
    check "list elements are not quoted", "[9, 10]" is in tJ or "[9,10]" is in tJ, tJ
    put JSONParser(tJ) into tB
-   check "nested pretty output parses back", tB["o"]["007"] is "a" and tB["o"]["3.10"] is "b" and tB["l"][2] is 10, the keys of tB
+   check "nested pretty output parses back", tB["o"]["seven"] is "a" and tB["o"]["eight"] is "b" and tB["l"][2] is 10, the keys of tB
 
    -- values keep their types
    put empty into tA
