@@ -21,7 +21,7 @@ on startup
 end startup
 
 on testPrettyKeys
-   local tA, tJ, tB
+   local tA, tJ, tB, i
    put 0 into sPass
    put 0 into sFail
 
@@ -55,6 +55,32 @@ on testPrettyKeys
    put "text" into tA["s"]
    put JSONStringify(tA, empty, true) into tJ
    check "number value stays bare, string value stays quoted", quote & "n" & quote & ": 42" is in tJ and quote & "s" & quote & ": " & quote & "text" & quote is in tJ, tJ
+
+   -- layout: short containers stay on one line, long ones expand, and an
+   -- empty string value is not mistaken for a bracket
+   put empty into tA
+   put "" into tA["e"]
+   put 1 into tA["short"]["a"]
+   repeat with i = 1 to 12
+      put "value number " & i into tA["long"]["key" & i]
+   end repeat
+   put JSONStringify(tA, empty, true) into tJ
+   check "short container on one line", quote & "short" & quote & ": {" & quote & "a" & quote & ": 1}" is in tJ, tJ
+   check "long container expanded", quote & "long" & quote & ": {" & numToChar(10) is in tJ, tJ
+   check "closing bracket of the long container on its own line", numToChar(10) & "  }" is in tJ, tJ
+   put JSONParser(tJ) into tB
+   check "layout output parses back", tB["e"] is empty and tB["short"]["a"] is 1 and tB["long"]["key12"] is "value number 12", the keys of tB
+
+   -- a bigger document stays fast
+   local tBig, tStart
+   repeat with i = 1 to 3000
+      put "name " & i into tBig["items"][i]["name"]
+      put i into tBig["items"][i]["n"]
+      put "x" into tBig["items"][i]["sub"]["k"]
+   end repeat
+   put the milliseconds into tStart
+   put JSONStringify(tBig, empty, true) into tJ
+   check "pretty printing 3000 records takes under 5 seconds", (the milliseconds - tStart) < 5000, (the milliseconds - tStart) & " ms"
 
    put "PASS " & sPass & "  FAIL " & sFail & return
 end testPrettyKeys
