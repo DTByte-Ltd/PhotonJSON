@@ -53,6 +53,13 @@ on testSortedKeys
    put JSONStringify(tA, empty, true) into tJ2
    check "pretty output is identical on repeat", tJ1 is tJ2, tJ1
 
+   -- the empty string is a key like any other
+   put empty into tA
+   put 1 into tA[""]
+   check "an object whose only key is the empty string", JSONStringify(tA) is ("{" & quote & quote & ": 1}"), JSONStringify(tA)
+   put 2 into tA["a"]
+   check "the empty-string key sorts first", JSONStringify(tA) is ("{" & quote & quote & ": 1," & quote & "a" & quote & ": 2}"), JSONStringify(tA)
+
    put "PASS " & sPass & "  FAIL " & sFail & return
 end testSortedKeys
 

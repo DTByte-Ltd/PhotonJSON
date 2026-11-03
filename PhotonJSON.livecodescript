@@ -654,6 +654,11 @@ private command _builderJSON pArray, pIsNumeric, pOptions, @xJsonString
       local tKeys
       put the keys of pArray into tKeys
       sort lines of tKeys international
+      if tKeys is empty and the number of elements in pArray is 1 then
+         # the only key is the empty string, which "the keys" gives as empty
+         # text; one empty line makes the loop below visit it
+         put return into tKeys
+      end if
       repeat for each line k in tKeys
          if pArray[k] is an array then
             put _jsonString(k) & ": " &JSONStringify(pArray[k], tString, tPretty) & comma after xJsonString
