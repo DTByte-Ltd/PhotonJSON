@@ -69,7 +69,7 @@ on testPrettyKeys
    check "long container expanded", quote & "long" & quote & ": {" & numToChar(10) is in tJ, tJ
    check "closing bracket of the long container on its own line", numToChar(10) & "  }" is in tJ, tJ
    put JSONParser(tJ) into tB
-   check "layout output parses back", tB["e"] is empty and tB["short"]["a"] is 1 and tB["long"]["key12"] is "value number 12", the keys of tB
+   check "layout output parses back", "e" is among the keys of tB and tB["short"]["a"] is 1 and tB["long"]["key12"] is "value number 12", the keys of tB
 
    -- a bigger document stays fast
    local tBig, tStart
