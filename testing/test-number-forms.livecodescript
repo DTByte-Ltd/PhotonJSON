@@ -43,6 +43,11 @@ on testNumberForms
    end repeat
 
    put empty into tA
+   put "6" & numToChar(10) into tA["v"]
+   put JSONStringify(tA) into tJ
+   check "a number followed by a newline is written as a string", tJ is ("{" & quote & "v" & quote & ": " & quote & "6\n" & quote & "}"), tJ
+
+   put empty into tA
    put " 42" into tA["v"]
    put JSONStringify(tA) into tJ
    check "a number with a leading space is written as a string", tJ is ("{" & quote & "v" & quote & ": " & quote & " 42" & quote & "}"), tJ
