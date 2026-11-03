@@ -797,6 +797,10 @@ end _unicodeEscapes
 # json beautiful and compact
 private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
    local tFormatted, tIndent, kSpace, tPrevToken = "", tIndex = 0, tOpenClose = "", tItems = "", tHyphenMinus = false
+   # tIsObject records, per open container, whether it is an object; tExpectKey
+   # is true while the next token is a key, which must always be written as a
+   # string however it looks ("123", "true", "null" or "" are all valid keys).
+   local tIsObject = "", tExpectKey = false
 
    if sMaxLength is not an integer then put 50 into sMaxLength
    if pIndentSize is not a integer or pIndentSize > 10 then put 4 into pIndentSize
@@ -832,6 +836,8 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
       switch tToken
          case "{"; case "["
             put kSpace after tIndent
+            put comma & (tToken is "{") after tIsObject
+            put (tToken is "{") into tExpectKey
             if the length of (the token tIndex to tOpenClose[tIndex] of pJsonString) > sMaxLength then
                put tToken & cr & tIndent after tFormatted
                put comma & true after tItems
@@ -849,10 +855,13 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
                put tToken after tFormatted
             end if
             delete last item of tItems
+            delete last item of tIsObject
+            put false into tExpectKey
             break
 
          case ":"
             put ": " after tFormatted
+            put false into tExpectKey
             break
 
          case comma
@@ -861,6 +870,7 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
             else
                put comma & space after tFormatted
             end if
+            put (the last item of tIsObject is true) into tExpectKey
             break
 
          case "-"
@@ -879,7 +889,7 @@ private function _jsonPrettyCompact pJsonString, pIndentSize, pForceRootType
                replace "\u0022" with "\" & quote in tToken
             end if
 
-            if pForceRootType is "string" then
+            if tExpectKey or pForceRootType is "string" then
                put quote & tToken & quote after tFormatted
             else
                put _jsonValue(tToken, true) after tFormatted
