@@ -641,7 +641,8 @@ private command _builderJSON pArray, pIsNumeric, pOptions, @xJsonString
             put JSONStringify(e, tString, tPretty) & comma after xJsonString
          else 
             put _jsonValue(e) into tValue
-            if tString is "string" then
+            if tString is "string" and char 1 of tValue is not quote then
+               # a number or literal forced to a string; strings are already quoted
                put quote & tValue & quote into tValue
             end if
             put tValue & comma after xJsonString
@@ -653,9 +654,10 @@ private command _builderJSON pArray, pIsNumeric, pOptions, @xJsonString
             put _jsonString(k) & ": " &JSONStringify(pArray[k], tString, tPretty) & comma after xJsonString
          else
             put _jsonValue(pArray[k]) into tValue
-            if tString is "string" then
+            if tString is "string" and char 1 of tValue is not quote then
+               # a number or literal forced to a string; strings are already quoted
                put quote & tValue & quote into tValue
-            end if            
+            end if
             put _jsonString(k) & ": " & tValue & comma after xJsonString
          end if
       end repeat
